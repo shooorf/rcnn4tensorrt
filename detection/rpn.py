@@ -153,32 +153,19 @@ class AnchorGenerator(nn.Module):
         return anchors
 
     def cached_grid_anchors(self, grid_sizes, strides):
-        # type: (List[List[int]], List[List[int]])
-        key = str(grid_sizes + strides)
-        if key in self._cache:
-            return self._cache[key]
         anchors = self.grid_anchors(grid_sizes, strides)
-        self._cache[key] = anchors
         return anchors
 
-    def forward(self, image_list, feature_maps):
+    def forward(self, images_sizes, feature_maps):
         # type: (ImageList, List[Tensor])
         grid_sizes = list([feature_map.shape[-2:] for feature_map in feature_maps])
-        image_size = image_list.tensors.shape[-2:]
+        image_size = images_sizes[0]
         strides = [[int(image_size[0] / g[0]), int(image_size[1] / g[1])] for g in grid_sizes]
-        
         dtype, device = feature_maps[0].dtype, feature_maps[0].device
         self.set_cell_anchors(dtype, device)
-        anchors_over_all_feature_maps = self.cached_grid_anchors(grid_sizes, strides)
-        anchors = torch.jit.annotate(List[List[torch.Tensor]], [])
-        for i, (image_height, image_width) in enumerate(image_list.image_sizes):
-            anchors_in_image = []
-            for anchors_per_feature_map in anchors_over_all_feature_maps:
-                anchors_in_image.append(anchors_per_feature_map)
-            anchors.append(anchors_in_image)
-        anchors = [torch.cat(anchors_per_image) for anchors_per_image in anchors]
-        # Clear the cache in case that memory leaks.
-        self._cache.clear()
+        anchors_over_all_feature_maps = self.grid_anchors(grid_sizes, strides)
+        anchors_per_image = torch.jit.annotate(List[torch.Tensor], [a for a in anchors_over_all_feature_maps])
+        anchors = [torch.cat(anchors_per_image) for _ in images_sizes]
         return anchors
 
 
@@ -381,7 +368,7 @@ class RegionProposalNetwork(torch.nn.Module):
             offset += num_anchors
         return torch.cat(r, dim=1)
 
-    def filter_proposals(self, proposals, objectness, image_shapes, num_anchors_per_level):
+    def filter_proposals(self, proposals, objectness, image_shape, num_anchors_per_level):
         # type: (Tensor, Tensor, List[Tuple[int, int]], List[int])
         num_images = proposals.shape[0]
         device = proposals.device
@@ -408,8 +395,8 @@ class RegionProposalNetwork(torch.nn.Module):
 
         final_boxes = []
         final_scores = []
-        for boxes, scores, lvl, img_shape in zip(proposals, objectness, levels, image_shapes):
-            boxes = box_ops.clip_boxes_to_image(boxes, img_shape)
+        for boxes, scores, lvl in zip(proposals, objectness, levels):
+            boxes = box_ops.clip_boxes_to_image(boxes, image_shape)
             keep = box_ops.remove_small_boxes(boxes, self.min_size)
             boxes, scores, lvl = boxes[keep], scores[keep], lvl[keep]
             # non-maximum suppression, independently done per level
@@ -458,7 +445,7 @@ class RegionProposalNetwork(torch.nn.Module):
 
         return objectness_loss, box_loss
 
-    def forward(self, images, features, targets=None):
+    def forward(self, images_sizes, features, targets=None):
         # type: (ImageList, Dict[str, Tensor], Optional[List[Dict[str, Tensor]]])
         """
         Arguments:
@@ -479,9 +466,9 @@ class RegionProposalNetwork(torch.nn.Module):
         # RPN uses all feature maps that are available
         features = list(features.values())
         objectness, pred_bbox_deltas = self.head(features)
-        anchors = self.anchor_generator(images, features)
+        anchors = self.anchor_generator(images_sizes, features)
 
-        num_images = len(anchors)
+        num_images = len(images_sizes)
         num_anchors_per_level = [o[0].numel() for o in objectness]
         objectness, pred_bbox_deltas = \
             concat_box_prediction_layers(objectness, pred_bbox_deltas)
@@ -490,17 +477,7 @@ class RegionProposalNetwork(torch.nn.Module):
         # the proposals
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
         proposals = proposals.view(num_images, -1, 4)
-        boxes, scores = self.filter_proposals(proposals, objectness, images.image_sizes, num_anchors_per_level)
+        boxes, scores = self.filter_proposals(proposals, objectness, images_sizes[0], num_anchors_per_level)
 
         losses = {}
-        if self.training:
-            assert targets is not None
-            labels, matched_gt_boxes = self.assign_targets_to_anchors(anchors, targets)
-            regression_targets = self.box_coder.encode(matched_gt_boxes, anchors)
-            loss_objectness, loss_rpn_box_reg = self.compute_loss(
-                objectness, pred_bbox_deltas, labels, regression_targets)
-            losses = {
-                "loss_objectness": loss_objectness,
-                "loss_rpn_box_reg": loss_rpn_box_reg,
-            }
         return boxes, losses

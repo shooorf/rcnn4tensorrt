@@ -24,9 +24,9 @@ class GeneralizedRCNN(nn.Module):
             the model
     """
 
-    def __init__(self, backbone, rpn, roi_heads, transform):
+    def __init__(self, backbone, rpn, roi_heads):
         super(GeneralizedRCNN, self).__init__()
-        self.transform = transform
+        # self.transform = transform
         self.backbone = backbone
         self.rpn = rpn
         self.roi_heads = roi_heads
@@ -41,7 +41,7 @@ class GeneralizedRCNN(nn.Module):
 
         return detections
 
-    def forward(self, images, targets=None):
+    def forward(self, images_tensor, targets=None):
         # type: (List[Tensor], Optional[List[Dict[str, Tensor]]])
         """
         Arguments:
@@ -55,31 +55,33 @@ class GeneralizedRCNN(nn.Module):
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
-        if self.training and targets is None:
-            raise ValueError("In training mode, targets should be passed")
-        original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [])
-        for img in images:
-            val = img.shape[-2:]
-            assert len(val) == 2
-            original_image_sizes.append((val[0], val[1]))
-
-        images, targets = self.transform(images, targets)
-        features = self.backbone(images.tensors)
-        print(images.tensors.size(), type(features))
-        if isinstance(features, torch.Tensor):
-            features = OrderedDict([('0', features)])
-        proposals, proposal_losses = self.rpn(images, features, targets)
-        detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
-        detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
+        #if self.training and targets is None:
+        #    raise ValueError("In training mode, targets should be passed")
+        original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [(768, 1365)] * 4) #images_tensor.shape[0]
+        #for img in images:
+        #    val = img.shape[-2:]
+        #    assert len(val) == 2
+        #    original_image_sizes.append((val[0], val[1]))
+        #images, targets = self.transform(images, targets)
+        features = self.backbone(images_tensor)
+        # print(images.tensors.size(), type(features))
+        # if isinstance(features, torch.Tensor):
+        #    features = OrderedDict([('0', features)])
+        
+        #const_shape =  torch.Size([4, 3, 768, 1365]) #images_tensor.shape
+        proposals, proposal_losses = self.rpn(original_image_sizes, features, targets)
+        detections, detector_losses = self.roi_heads(features, proposals, original_image_sizes, targets)
+        #detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
 
         losses = {}
         losses.update(detector_losses)
         losses.update(proposal_losses)
 
-        if torch.jit.is_scripting():
-            if not self._has_warned:
-                warnings.warn("RCNN always returns a (Losses, Detections) tuple in scripting")
-                self._has_warned = True
-            return (losses, detections)
-        else:
-            return self.eager_outputs(losses, detections)
+        #if torch.jit.is_scripting():
+        #    if not self._has_warned:
+        #        warnings.warn("RCNN always returns a (Losses, Detections) tuple in scripting")
+        #        self._has_warned = True
+        #    return (losses, detections)
+        #else:
+        #    return self.eager_outputs(losses, detections)
+        return detections
