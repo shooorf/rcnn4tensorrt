@@ -285,11 +285,13 @@ class RegionProposalNetwork(torch.nn.Module):
                  fg_iou_thresh, bg_iou_thresh,
                  batch_size_per_image, positive_fraction,
                  #
-                 pre_nms_top_n, post_nms_top_n, nms_thresh):
+                 pre_nms_top_n, post_nms_top_n, nms_thresh, img_shape, batch_size, device_): 
         super(RegionProposalNetwork, self).__init__()
         self.anchor_generator = anchor_generator
-        self.original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [(768, 1365)] * 4)
-        self.anchors = self.anchor_generator(self.original_image_sizes, dtype=torch.float32, device='cuda:0')
+        
+        self.original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [img_shape] * batch_size)
+        self.anchors = self.anchor_generator(self.original_image_sizes, dtype=torch.float32, device=device_)
+        
         self.head = head
         self.box_coder = det_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
 

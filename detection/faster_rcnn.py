@@ -156,7 +156,9 @@ class FasterRCNN(GeneralizedRCNN):
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
-                 bbox_reg_weights=None):
+                 bbox_reg_weights=None, 
+                 img_shape=(768, 1365), batch_size=4, device_='cuda'
+                 ):
 
         if not hasattr(backbone, "out_channels"):
             raise ValueError(
@@ -195,7 +197,8 @@ class FasterRCNN(GeneralizedRCNN):
             rpn_anchor_generator, rpn_head,
             rpn_fg_iou_thresh, rpn_bg_iou_thresh,
             rpn_batch_size_per_image, rpn_positive_fraction,
-            rpn_pre_nms_top_n, rpn_post_nms_top_n, rpn_nms_thresh)
+            rpn_pre_nms_top_n, rpn_post_nms_top_n, rpn_nms_thresh,  
+            img_shape, batch_size, device_ )
 
         if box_roi_pool is None:
             box_roi_pool = MultiScaleRoIAlign(
