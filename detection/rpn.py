@@ -159,6 +159,7 @@ class AnchorGenerator(nn.Module):
     def forward(self, images_sizes, feature_maps):
         # type: (ImageList, List[Tensor])
         grid_sizes = list([feature_map.shape[-2:] for feature_map in feature_maps])
+        print('grid_sizes: ', grid_sizes)
         image_size = images_sizes[0]
         strides = [[int(image_size[0] / g[0]), int(image_size[1] / g[1])] for g in grid_sizes]
         dtype, device = feature_maps[0].dtype, feature_maps[0].device
@@ -445,7 +446,7 @@ class RegionProposalNetwork(torch.nn.Module):
 
         return objectness_loss, box_loss
 
-    def forward(self, images_sizes, features, targets=None):
+    def forward(self, features, targets=None):
         # type: (ImageList, Dict[str, Tensor], Optional[List[Dict[str, Tensor]]])
         """
         Arguments:
@@ -466,9 +467,9 @@ class RegionProposalNetwork(torch.nn.Module):
         # RPN uses all feature maps that are available
         features = list(features.values())
         objectness, pred_bbox_deltas = self.head(features)
-        anchors = self.anchor_generator(images_sizes, features)
+        anchors = self.anchor_generator(self.original_image_sizes, features)
 
-        num_images = len(images_sizes)
+        num_images = len(self.original_image_sizes)
         num_anchors_per_level = [o[0].numel() for o in objectness]
         objectness, pred_bbox_deltas = \
             concat_box_prediction_layers(objectness, pred_bbox_deltas)
@@ -477,7 +478,7 @@ class RegionProposalNetwork(torch.nn.Module):
         # the proposals
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
         proposals = proposals.view(num_images, -1, 4)
-        boxes, scores = self.filter_proposals(proposals, objectness, images_sizes[0], num_anchors_per_level)
+        boxes, scores = self.filter_proposals(proposals, objectness, self.original_image_sizes[0], num_anchors_per_level)
 
         losses = {}
         return boxes, losses
