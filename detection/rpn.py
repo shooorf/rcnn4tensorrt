@@ -156,13 +156,14 @@ class AnchorGenerator(nn.Module):
         anchors = self.grid_anchors(grid_sizes, strides)
         return anchors
 
-    def forward(self, images_sizes, feature_maps):
+    def forward(self, images_sizes, dtype, device):
         # type: (ImageList, List[Tensor])
-        grid_sizes = list([feature_map.shape[-2:] for feature_map in feature_maps])
-        print('grid_sizes: ', grid_sizes)
+        grid_sizes = [torch.Size([192, 342]), torch.Size([96, 171]), torch.Size([48, 86]), torch.Size([24, 43]), torch.Size([12, 22])]
+        # list([feature_map.shape[-2:] for feature_map in feature_maps])
+        #print('grid_sizes: ', grid_sizes)
         image_size = images_sizes[0]
         strides = [[int(image_size[0] / g[0]), int(image_size[1] / g[1])] for g in grid_sizes]
-        dtype, device = feature_maps[0].dtype, feature_maps[0].device
+        #dtype, device = feature_maps[0].dtype, feature_maps[0].device
         self.set_cell_anchors(dtype, device)
         anchors_over_all_feature_maps = self.grid_anchors(grid_sizes, strides)
         anchors_per_image = torch.jit.annotate(List[torch.Tensor], [a for a in anchors_over_all_feature_maps])
@@ -287,6 +288,8 @@ class RegionProposalNetwork(torch.nn.Module):
                  pre_nms_top_n, post_nms_top_n, nms_thresh):
         super(RegionProposalNetwork, self).__init__()
         self.anchor_generator = anchor_generator
+        self.original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [(768, 1365)] * 4)
+        self.anchors = self.anchor_generator(self.original_image_sizes, dtype=torch.float32, device='cuda:0')
         self.head = head
         self.box_coder = det_utils.BoxCoder(weights=(1.0, 1.0, 1.0, 1.0))
 
@@ -467,7 +470,6 @@ class RegionProposalNetwork(torch.nn.Module):
         # RPN uses all feature maps that are available
         features = list(features.values())
         objectness, pred_bbox_deltas = self.head(features)
-        anchors = self.anchor_generator(self.original_image_sizes, features)
 
         num_images = len(self.original_image_sizes)
         num_anchors_per_level = [o[0].numel() for o in objectness]
@@ -476,7 +478,7 @@ class RegionProposalNetwork(torch.nn.Module):
         # apply pred_bbox_deltas to anchors to obtain the decoded proposals
         # note that we detach the deltas because Faster R-CNN do not backprop through
         # the proposals
-        proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
+        proposals = self.box_coder.decode(pred_bbox_deltas.detach(), self.anchors)
         proposals = proposals.view(num_images, -1, 4)
         boxes, scores = self.filter_proposals(proposals, objectness, self.original_image_sizes[0], num_anchors_per_level)
 

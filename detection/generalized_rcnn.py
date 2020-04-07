@@ -57,7 +57,7 @@ class GeneralizedRCNN(nn.Module):
         """
         #if self.training and targets is None:
         #    raise ValueError("In training mode, targets should be passed")
-        original_image_sizes = torch.jit.annotate(List[Tuple[int, int]], [(768, 1365)] * 4) #images_tensor.shape[0]
+         #images_tensor.shape[0]
         #for img in images:
         #    val = img.shape[-2:]
         #    assert len(val) == 2
@@ -67,11 +67,10 @@ class GeneralizedRCNN(nn.Module):
         # print(images.tensors.size(), type(features))
         # if isinstance(features, torch.Tensor):
         #    features = OrderedDict([('0', features)])
-        
         #const_shape =  torch.Size([4, 3, 768, 1365]) #images_tensor.shape
-        self.rpn.original_image_sizes = original_image_sizes
+        print('FEATURE MAPS ', features[0].dtype, features[0].device)
         proposals, proposal_losses = self.rpn(features, targets)
-        detections, detector_losses = self.roi_heads(features, proposals, original_image_sizes, targets)
+        detections, detector_losses = self.roi_heads(features, proposals, self.rpn.original_image_sizes, targets)
         #detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
 
         losses = {}
